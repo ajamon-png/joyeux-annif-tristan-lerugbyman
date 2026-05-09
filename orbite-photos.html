@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Portraits en orbite</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --panel: rgba(7, 10, 22, 0.72);
+      --panel-border: rgba(219, 230, 255, 0.22);
+      --text: #f6f8ff;
+      --muted: #b9c4dc;
+      --accent: #73fff0;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      background: #02030a;
+      color: var(--text);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    canvas {
+      display: block;
+      width: 100vw;
+      height: 100vh;
+      cursor: crosshair;
+    }
+
+    .controls {
+      position: fixed;
+      top: 18px;
+      right: 18px;
+      width: min(292px, calc(100vw - 36px));
+      padding: 14px;
+      border: 1px solid var(--panel-border);
+      border-radius: 8px;
+      background: var(--panel);
+      box-shadow: 0 20px 56px rgba(0, 0, 0, 0.42);
+      backdrop-filter: blur(18px);
+      z-index: 2;
+    }
+
+    .controls header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+
+    .controls h1 {
+      margin: 0;
+      font-size: 14px;
+      font-weight: 720;
+      letter-spacing: 0;
+    }
+
+    .button {
+      appearance: none;
+      border: 1px solid rgba(141, 240, 255, 0.42);
+      border-radius: 8px;
+      background: rgba(141, 240, 255, 0.12);
+      color: var(--text);
+      cursor: pointer;
+      font: inherit;
+      font-size: 13px;
+      min-height: 34px;
+      padding: 0 12px;
+    }
+
+    .button:hover {
+      background: rgba(141, 240, 255, 0.22);
+    }
+
+    .row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      align-items: center;
+      gap: 12px;
+      margin-top: 10px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    input[type="range"] {
+      width: 132px;
+      accent-color: var(--accent);
+    }
+
+    input[type="checkbox"] {
+      width: 18px;
+      height: 18px;
+      accent-color: var(--accent);
+    }
+
+    .speed-value {
+      display: inline-block;
+      color: var(--text);
+      font-variant-numeric: tabular-nums;
+      min-width: 38px;
+      text-align: right;
+    }
+
+    @media (max-width: 720px) {
+      .controls {
+        top: auto;
+        right: 12px;
+        bottom: 12px;
+        left: 12px;
+        width: auto;
+      }
+    }
+  </style>
+</head>
+<body>
+  <canvas id="portraitOrbit" aria-label="Portrait principal avec tetes en orbite"></canvas>
+
+  <section class="controls" aria-label="Controles de l'animation">
+    <header>
+      <h1>Cover orbitale</h1>
+      <button class="button" id="pauseButton" type="button">Pause</button>
+    </header>
+
+    <label class="row">
+      <span>Vitesse</span>
+      <span>
+        <input id="speedControl" type="range" min="0.2" max="4" step="0.1" value="1" />
+        <span class="speed-value" id="speedValue">1.0x</span>
+      </span>
+    </label>
+
+    <label class="row">
+      <span>Orbites</span>
+      <input id="orbitToggle" type="checkbox" checked />
+    </label>
+
+    <label class="row">
+      <span>Etiquettes</span>
+      <input id="labelToggle" type="checkbox" />
+    </label>
+  </section>
+
+  <script>
+    const canvas = document.getElementById("portraitOrbit");
+    const ctx = canvas.getContext("2d", { alpha: false });
+    const pauseButton = document.getElementById("pauseButton");
+    const speedControl = document.getElementById("speedControl");
+    const speedValue = document.getElementById("speedValue");
+    const orbitToggle = document.getElementById("orbitToggle");
+    const labelToggle = document.getElementById("labelToggle");
+
+    const imageList = [
+      ["background", "assets/orbite-photos/album-cover-7.png"],
+      ["orbit1", "assets/orbite-photos/orbit-1.jpeg"],
+      ["orbit3", "assets/orbite-photos/orbit-3.jpeg"],
+      ["orbit5", "assets/orbite-photos/orbit-5.jpeg"],
+      ["orbitWhatsapp", "assets/orbite-photos/orbit-whatsapp.jpeg"],
+      ["orbitWhatsapp2", "assets/orbite-photos/orbit-whatsapp-2.jpeg"],
+      ["orbitNewFace", "assets/orbite-photos/orbit-new-face.jpg"]
+    ];
+
+    const images = {};
+    const orbiters = [
+      {
+        name: "Gramandine",
+        key: "orbit1",
+        orbit: 170,
+        size: 40,
+        speed: 1.22,
+        angle: 0.4,
+        crop: { x: 0.2, y: 0.05, w: 0.6, h: 0.56 }
+      },
+      {
+        name: "Tic",
+        key: "orbit3",
+        orbit: 214,
+        size: 39,
+        speed: 0.82,
+        angle: 2.2,
+        crop: { x: 0.03, y: 0.02, w: 0.9, h: 0.9 }
+      },
+      {
+        name: "Megrodie",
+        key: "orbit5",
+        orbit: 260,
+        size: 40,
+        speed: 0.58,
+        angle: 3.8,
+        crop: { x: 0.05, y: 0.22, w: 0.5, h: 0.46 }
+      },
+      {
+        name: "Dark Arthur",
+        key: "orbitWhatsapp",
+        orbit: 304,
+        size: 39,
+        speed: 0.38,
+        angle: 5.3,
+        crop: { x: 0.03, y: 0.01, w: 0.86, h: 0.86 }
+      },
+      {
+        name: "Flash",
+        key: "orbitWhatsapp2",
+        orbit: 348,
+        size: 39,
+        speed: 0.3,
+        angle: 1.15,
+        crop: { x: 0.06, y: 0.02, w: 0.86, h: 0.74 }
+      },
+      {
+        name: "Anus",
+        key: "orbitNewFace",
+        orbit: 392,
+        size: 39,
+        speed: 0.24,
+        angle: 4.65,
+        crop: { x: 0.08, y: 0.04, w: 0.84, h: 0.78 }
+      }
+    ];
+
+    let width = 0;
+    let height = 0;
+    let dpr = 1;
+    let scale = 1;
+    let center = { x: 0, y: 0 };
+    let albumRect = { x: 0, y: 0, size: 0 };
+    let orbitCenter = { x: 0, y: 0 };
+    let stars = [];
+    let hovered = null;
+    let paused = false;
+    let speed = 1;
+    let lastTime = performance.now();
+
+    function loadImages() {
+      return Promise.all(imageList.map(([key, src]) => new Promise((resolve, reject) => {
+        const image = new Image();
+        image.onload = () => {
+          images[key] = image;
+          resolve();
+        };
+        image.onerror = reject;
+        image.src = src;
+      })));
+    }
+
+    function resize() {
+      dpr = Math.min(window.devicePixelRatio || 1, 2);
+      width = window.innerWidth;
+      height = window.innerHeight;
+      canvas.width = Math.floor(width * dpr);
+      canvas.height = Math.floor(height * dpr);
+      canvas.style.width = `${width}px`;
+      canvas.style.height = `${height}px`;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      center = { x: width / 2, y: height / 2 };
+      scale = Math.min(width, height) / 760;
+      const artSize = Math.min(width, height) * (width < 760 ? 0.98 : 0.94);
+      albumRect = {
+        x: (width - artSize) / 2,
+        y: (height - artSize) / 2,
+        size: artSize
+      };
+      orbitCenter = {
+        x: albumRect.x + albumRect.size * 0.5,
+        y: albumRect.y + albumRect.size * 0.365
+      };
+      stars = Array.from({ length: Math.floor((width * height) / 8200) }, () => ({
+        x: Math.random() * width,
+        y: Math.random() * height,
+        r: Math.random() * 1.35 + 0.25,
+        a: Math.random() * 0.5 + 0.18
+      }));
+    }
+
+    function drawImageCover(image, x, y, w, h) {
+      const imageRatio = image.width / image.height;
+      const targetRatio = w / h;
+      let sx = 0;
+      let sy = 0;
+      let sw = image.width;
+      let sh = image.height;
+
+      if (imageRatio > targetRatio) {
+        sw = image.height * targetRatio;
+        sx = (image.width - sw) / 2;
+      } else {
+        sh = image.width / targetRatio;
+        sy = (image.height - sh) / 2;
+      }
+
+      ctx.drawImage(image, sx, sy, sw, sh, x, y, w, h);
+    }
+
+    function drawCroppedCircle(image, crop, x, y, radius, highlighted) {
+      const sx = crop.x * image.width;
+      const sy = crop.y * image.height;
+      const sw = crop.w * image.width;
+      const sh = crop.h * image.height;
+
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(x, y, radius, 0, Math.PI * 2);
+      ctx.clip();
+      ctx.drawImage(image, sx, sy, sw, sh, x - radius, y - radius, radius * 2, radius * 2);
+      ctx.restore();
+
+      ctx.beginPath();
+      ctx.arc(x, y, radius + 2, 0, Math.PI * 2);
+      ctx.strokeStyle = highlighted ? "rgba(255, 255, 255, 0.96)" : "rgba(220, 236, 255, 0.72)";
+      ctx.lineWidth = highlighted ? 4 : 2;
+      ctx.stroke();
+    }
+
+    function drawBackground(time) {
+      ctx.save();
+      ctx.filter = "blur(18px) saturate(1.2) brightness(0.54)";
+      drawImageCover(images.background, -36, -36, width + 72, height + 72);
+      ctx.restore();
+
+      const shade = ctx.createRadialGradient(center.x, center.y, 20, center.x, center.y, Math.max(width, height) * 0.76);
+      shade.addColorStop(0, "rgba(4, 13, 22, 0.04)");
+      shade.addColorStop(0.42, "rgba(2, 4, 12, 0.2)");
+      shade.addColorStop(1, "rgba(1, 2, 8, 0.74)");
+      ctx.fillStyle = shade;
+      ctx.fillRect(0, 0, width, height);
+
+      for (const star of stars) {
+        const twinkle = 0.78 + Math.sin(time * 0.0017 + star.x * 0.03) * 0.22;
+        ctx.beginPath();
+        ctx.fillStyle = `rgba(235, 247, 255, ${star.a * twinkle})`;
+        ctx.arc(star.x, star.y, star.r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      ctx.save();
+      ctx.shadowColor = "rgba(75, 255, 235, 0.4)";
+      ctx.shadowBlur = 32 * scale;
+      ctx.drawImage(images.background, albumRect.x, albumRect.y, albumRect.size, albumRect.size);
+      ctx.restore();
+
+      const ringGlow = ctx.createRadialGradient(orbitCenter.x, orbitCenter.y, albumRect.size * 0.12, orbitCenter.x, orbitCenter.y, albumRect.size * 0.48);
+      ringGlow.addColorStop(0, "rgba(83, 255, 241, 0)");
+      ringGlow.addColorStop(0.46, "rgba(91, 251, 238, 0.13)");
+      ringGlow.addColorStop(1, "rgba(244, 65, 206, 0)");
+      ctx.fillStyle = ringGlow;
+      ctx.fillRect(albumRect.x, albumRect.y, albumRect.size, albumRect.size);
+    }
+
+    function drawOrbit(x, y, radius, flatten = 0.62) {
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.scale(1, flatten);
+      ctx.beginPath();
+      ctx.strokeStyle = "rgba(208, 229, 255, 0.18)";
+      ctx.lineWidth = 1;
+      ctx.arc(0, 0, radius, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    function positionFor(item) {
+      const orbit = item.orbit * Math.min(1, albumRect.size / 900);
+      return {
+        x: orbitCenter.x + Math.cos(item.angle) * orbit,
+        y: orbitCenter.y + Math.sin(item.angle) * orbit * 0.52
+      };
+    }
+
+    function roundRect(x, y, w, h, r) {
+      const radius = Math.min(r, w / 2, h / 2);
+      ctx.moveTo(x + radius, y);
+      ctx.arcTo(x + w, y, x + w, y + h, radius);
+      ctx.arcTo(x + w, y + h, x, y + h, radius);
+      ctx.arcTo(x, y + h, x, y, radius);
+      ctx.arcTo(x, y, x + w, y, radius);
+    }
+
+    function drawLabel(text, x, y, highlighted) {
+      if (!labelToggle.checked) return;
+      ctx.font = "700 12px Inter, system-ui, sans-serif";
+      const paddingX = 8;
+      const labelWidth = ctx.measureText(text).width + paddingX * 2;
+      const labelHeight = 23;
+      const left = Math.min(width - labelWidth - 8, Math.max(8, x));
+      const top = Math.min(height - labelHeight - 8, Math.max(8, y));
+
+      ctx.save();
+      ctx.beginPath();
+      roundRect(left, top, labelWidth, labelHeight, 7);
+      ctx.fillStyle = highlighted ? "rgba(141, 240, 255, 0.24)" : "rgba(6, 10, 22, 0.68)";
+      ctx.strokeStyle = highlighted ? "rgba(141, 240, 255, 0.68)" : "rgba(226, 238, 255, 0.18)";
+      ctx.lineWidth = 1;
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = "#f8fbff";
+      ctx.fillText(text, left + paddingX, top + 16);
+      ctx.restore();
+    }
+
+    function drawGiftText(time) {
+      const pulse = 0.82 + Math.sin(time * 0.002) * 0.18;
+      const y = Math.min(height - 42 * scale, albumRect.y + albumRect.size * 0.935);
+      const titleSize = Math.max(12, albumRect.size * 0.022);
+      const subSize = Math.max(10, albumRect.size * 0.016);
+
+      ctx.save();
+      ctx.textAlign = "center";
+      ctx.shadowColor = `rgba(94, 255, 244, ${0.6 + pulse * 0.24})`;
+      ctx.shadowBlur = 9 * scale;
+      ctx.fillStyle = "#ffffff";
+      ctx.font = `850 ${titleSize}px Inter, system-ui, sans-serif`;
+      ctx.fillText("JOYEUX ANNIVERSAIRE", center.x, y);
+
+      const gradient = ctx.createLinearGradient(center.x - 190 * scale, y + 22 * scale, center.x + 190 * scale, y + 62 * scale);
+      gradient.addColorStop(0, "#ff72d6");
+      gradient.addColorStop(0.36, "#7dfff3");
+      gradient.addColorStop(0.7, "#9fa7ff");
+      gradient.addColorStop(1, "#ffffff");
+      ctx.fillStyle = gradient;
+      ctx.font = `850 ${subSize * 1.12}px Inter, system-ui, sans-serif`;
+      ctx.fillText("2 PLACES DE CONCERT", center.x, y + 20 * scale);
+
+      ctx.fillStyle = "rgba(238, 250, 255, 0.94)";
+      ctx.font = `760 ${subSize}px Inter, system-ui, sans-serif`;
+      ctx.fillText("JUL 15/05/26", center.x, y + 38 * scale);
+      ctx.restore();
+    }
+
+    function update(delta) {
+      const step = delta * 0.00022 * speed;
+      for (const item of orbiters) {
+        item.angle += item.speed * step;
+      }
+    }
+
+    function draw(time) {
+      drawBackground(time);
+
+      if (orbitToggle.checked) {
+        for (const item of orbiters) {
+          drawOrbit(orbitCenter.x, orbitCenter.y, item.orbit * Math.min(1, albumRect.size / 900), 0.52);
+        }
+      }
+
+      const positions = orbiters.map((item) => ({ item, pos: positionFor(item) }));
+      positions.sort((a, b) => a.pos.y - b.pos.y);
+
+      for (const { item, pos } of positions) {
+        const radius = Math.max(24, item.size * Math.min(1, albumRect.size / 820) * (hovered === item.name ? 1.18 : 1));
+        const glow = ctx.createRadialGradient(pos.x, pos.y, radius * 0.35, pos.x, pos.y, radius * 2.7);
+        glow.addColorStop(0, hovered === item.name ? "rgba(255, 116, 218, 0.52)" : "rgba(116, 255, 242, 0.2)");
+        glow.addColorStop(1, "rgba(141, 240, 255, 0)");
+        ctx.fillStyle = glow;
+        ctx.beginPath();
+        ctx.arc(pos.x, pos.y, radius * 2.7, 0, Math.PI * 2);
+        ctx.fill();
+        drawCroppedCircle(images[item.key], item.crop, pos.x, pos.y, radius, hovered === item.name);
+      }
+
+      for (const { item, pos } of positions) {
+        const radius = Math.max(24, item.size * Math.min(1, albumRect.size / 820));
+        drawLabel(item.name, pos.x + radius + 8, pos.y - radius - 13, hovered === item.name);
+      }
+
+      drawGiftText(time);
+    }
+
+    function frame(time) {
+      const delta = Math.min(70, time - lastTime);
+      lastTime = time;
+      if (!paused) update(delta);
+      draw(time);
+      requestAnimationFrame(frame);
+    }
+
+    canvas.addEventListener("mousemove", (event) => {
+      const rect = canvas.getBoundingClientRect();
+      const x = event.clientX - rect.left;
+      const y = event.clientY - rect.top;
+      hovered = null;
+
+      for (const item of orbiters) {
+        const pos = positionFor(item);
+        const hit = Math.max(34, item.size * scale + 10);
+        if (Math.hypot(x - pos.x, y - pos.y) <= hit) {
+          hovered = item.name;
+          break;
+        }
+      }
+    });
+
+    canvas.addEventListener("mouseleave", () => {
+      hovered = null;
+    });
+
+    pauseButton.addEventListener("click", () => {
+      paused = !paused;
+      pauseButton.textContent = paused ? "Reprise" : "Pause";
+    });
+
+    speedControl.addEventListener("input", () => {
+      speed = Number(speedControl.value);
+      speedValue.textContent = `${speed.toFixed(1)}x`;
+    });
+
+    window.addEventListener("resize", resize);
+    resize();
+    loadImages().then(() => requestAnimationFrame(frame));
+  </script>
+</body>
+</html>
